@@ -8,6 +8,8 @@
 #include <xrpl/core/ServiceRegistry.h>
 #include <xrpl/ledger/ApplyView.h>
 #include <xrpl/ledger/OpenView.h>
+#include <xrpl/ledger/OrderBookDB.h>
+#include <xrpl/protocol/Book.h>
 #include <xrpl/protocol/Feature.h>
 #include <xrpl/protocol/Rules.h>
 #include <xrpl/protocol/SField.h>
@@ -21,6 +23,7 @@
 #include <exception>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace xrpl {
 
@@ -198,7 +201,19 @@ apply(
     });
 }
 
-static bool
+namespace {
+
+// The outcome of applying a batch's inner transactions: whether anything was
+// applied, and the order books the applied inners created.
+struct BatchApplyResult
+{
+    bool applied = false;
+    std::vector<Book> orderBooks;
+};
+
+}  // namespace
+
+static BatchApplyResult
 applyBatchTransactions(
     ServiceRegistry& registry,
     OpenView& batchView,
@@ -212,7 +227,10 @@ applyBatchTransactions(
     auto const parentBatchId = batchTxn.getTransactionID();
     auto const mode = batchTxn.getFlags();
 
-    auto applyOneTransaction = [&registry, &j, &parentBatchId, &batchView](STTx const& tx) {
+    std::vector<Book> orderBooks;
+
+    auto applyOneTransaction = [&registry, &j, &parentBatchId, &batchView, &orderBooks](
+                                   STTx const& tx) {
         OpenView perTxBatchView(kBatchView, batchView);
 
         auto const ret = apply(registry, perTxBatchView, parentBatchId, tx, TapBatch, j);
@@ -229,7 +247,13 @@ applyBatchTransactions(
         // there is no aggregate cap here. Bounded by kMaxBatchTxCount * cap,
         // which standalone txns can already produce in one ledger.
         if (ret.applied && (isTesSuccess(ret.ter) || isTecClaim(ret.ter)))
+        {
             perTxBatchView.apply(batchView);
+
+            // The books follow the changes into the batch view; they are
+            // registered only if the batch itself commits.
+            orderBooks.insert(orderBooks.end(), ret.orderBooks.begin(), ret.orderBooks.end());
+        }
 
         return ret;
     };
@@ -249,7 +273,7 @@ applyBatchTransactions(
         if (!isTesSuccess(result.ter))
         {
             if ((mode & tfAllOrNothing) != 0u)
-                return false;
+                return {};
 
             if ((mode & tfUntilFailure) != 0u)
                 break;
@@ -260,7 +284,7 @@ applyBatchTransactions(
         }
     }
 
-    return applied != 0;
+    return {.applied = applied != 0, .orderBooks = std::move(orderBooks)};
 }
 
 ApplyTransactionResult
@@ -292,8 +316,17 @@ applyTransaction(
             {
                 OpenView wholeBatchView(kBatchView, view);
 
-                if (applyBatchTransactions(registry, wholeBatchView, txn, j))
+                if (auto const batch = applyBatchTransactions(registry, wholeBatchView, txn, j);
+                    batch.applied)
+                {
                     wholeBatchView.apply(view);
+
+                    // The batch is in the ledger, so the books its inners
+                    // created exist.
+                    auto& orderBookDB = registry.getOrderBookDB();
+                    for (auto const& book : batch.orderBooks)
+                        orderBookDB.addOrderBook(book);
+                }
             }
 
             return ApplyTransactionResult::Success;

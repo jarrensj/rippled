@@ -1483,7 +1483,8 @@ TxQ::accept(Application& app, OpenView& view)
             JLOG(j_.trace()) << "Applying queued transaction " << candidateIter->txID
                              << " to open ledger.";
 
-            auto const [txnResult, didApply, _metadata] = candidateIter->apply(app, view, j_);
+            auto const [txnResult, didApply, _metadata, _orderBooks] =
+                candidateIter->apply(app, view, j_);
 
             if (didApply)
             {
@@ -1728,7 +1729,8 @@ TxQ::tryDirectApply(
         auto const transactionID = tx->getTransactionID();
         JLOG(j_.trace()) << "Applying transaction " << transactionID << " to open ledger.";
 
-        auto const [txnResult, didApply, metadata] = xrpl::apply(app, view, *tx, flags, j);
+        auto const [txnResult, didApply, metadata, _orderBooks] =
+            xrpl::apply(app, view, *tx, flags, j);
 
         JLOG(j_.trace()) << "New transaction " << transactionID
                          << (didApply ? " applied successfully with " : " failed with ")

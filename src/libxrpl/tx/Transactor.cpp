@@ -1627,7 +1627,11 @@ Transactor::operator()()
                             bool canApply,
                             std::optional<TxMeta>&& metadata = std::nullopt) -> ApplyResult {
         JLOG(j_.trace()) << (canApply ? "applied " : "not applied ") << transToken(result);
-        return {result, canApply, std::move(metadata)};
+        return {
+            result,
+            canApply,
+            std::move(metadata),
+            canApply ? ctx_.takeOrderBooks() : std::vector<Book>{}};
     };
 
     if (!canApply)

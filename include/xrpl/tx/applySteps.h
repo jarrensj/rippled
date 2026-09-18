@@ -5,6 +5,7 @@
 #include <xrpl/ledger/ApplyView.h>
 #include <xrpl/ledger/OpenView.h>
 #include <xrpl/ledger/ReadView.h>
+#include <xrpl/protocol/Book.h>
 #include <xrpl/protocol/Rules.h>
 #include <xrpl/protocol/SeqProxy.h>
 #include <xrpl/protocol/TER.h>
@@ -15,6 +16,7 @@
 #include <expected>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace xrpl {
 
@@ -28,8 +30,12 @@ struct ApplyResult
     bool applied;
     std::optional<TxMeta> metadata;
 
-    ApplyResult(TER t, bool a, std::optional<TxMeta> m = std::nullopt)
-        : ter(t), applied(a), metadata(std::move(m))
+    // Order books this transaction created, still to be registered with
+    // OrderBookDB by whoever commits the changes. Only a batch inner has any.
+    std::vector<Book> orderBooks;
+
+    ApplyResult(TER t, bool a, std::optional<TxMeta> m = std::nullopt, std::vector<Book> books = {})
+        : ter(t), applied(a), metadata(std::move(m)), orderBooks(std::move(books))
     {
     }
 };

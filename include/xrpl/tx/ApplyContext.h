@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include <vector>
 
 namespace xrpl {
 
@@ -131,12 +132,21 @@ public:
     }
 
     /**
-     * Registers a newly-created order book directory with the shared,
-     * process-wide OrderBookDB, unless this transaction is being applied
-     * under TapDryRun.
+     * Records a newly-created order book directory. The book reaches the
+     * shared, process-wide OrderBookDB only once the changes that created it
+     * reach the ledger: in apply() for an ordinary transaction, and for a
+     * batch inner only when the whole batch commits, through the books handed
+     * over by takeOrderBooks(). Nothing is recorded under TapDryRun.
      */
     void
     addOrderBook(Book const& book);
+
+    /**
+     * Takes the books created by this transaction that are not yet registered,
+     * leaving none behind. Only a batch inner has any; see addOrderBook().
+     */
+    [[nodiscard]] std::vector<Book>
+    takeOrderBooks();
 
     ApplyViewContext
     getApplyViewContext()
@@ -154,6 +164,9 @@ private:
 
     // The ID of the batch transaction we are executing under, if set.
     std::optional<uint256 const> parentBatchId_;
+
+    // Books created by this transaction and not yet registered with OrderBookDB.
+    std::vector<Book> orderBooks_;
 };
 
 }  // namespace xrpl
