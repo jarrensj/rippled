@@ -9,6 +9,7 @@
 #include <xrpl/ledger/ReadView.h>
 #include <xrpl/ledger/helpers/SponsorHelpers.h>
 #include <xrpl/protocol/AccountID.h>
+#include <xrpl/protocol/Feature.h>
 #include <xrpl/protocol/Protocol.h>
 #include <xrpl/protocol/SField.h>
 #include <xrpl/protocol/STAccount.h>  // IWYU pragma: keep
@@ -242,6 +243,22 @@ Batch::preflight(PreflightContext const& ctx)
         JLOG(ctx.j.debug()) << "BatchTrace[" << parentBatchId << "]:"
                             << "txns array must have at least 2 entries.";
         return temARRAY_EMPTY;
+    }
+
+    // Object fields with no InnerObjectFormats template carry no field
+    // constraints, so without this check any of them wraps an inner
+    // transaction as well as sfRawTransaction does.
+    if (ctx.rules.enabled(fixCleanup3_5_0))
+    {
+        for (STObject const& rawTxn : rawTxns)
+        {
+            if (rawTxn.getFName() != sfRawTransaction)
+            {
+                JLOG(ctx.j.debug()) << "BatchTrace[" << parentBatchId << "]:"
+                                    << "txns array may contain only RawTransaction objects.";
+                return temMALFORMED;
+            }
+        }
     }
 
     if (ctx.tx.isFieldPresent(sfBatchSigners) &&
